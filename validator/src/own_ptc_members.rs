@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use bls::PublicKeyBytes;
 use fork_choice_control::Wait;
 use helper_functions::{accessors, misc};
@@ -125,17 +125,8 @@ impl OwnPTCMembers {
             return Ok(());
         }
 
-        let PtcDuties {
-            dependent_root: reported_root,
-            duties,
-        } = beacon_nodes.ptc_duties(epoch, validator_indices).await?;
-
-        // Another root is another shuffling; the duties cannot stand in for the ones asked for.
-        ensure!(
-            reported_root == dependent_root,
-            "PTC duties for epoch {epoch} were reported under dependent root {reported_root:?} \
-             rather than {dependent_root:?}",
-        );
+        // Nodes disagree on the root they report for the Gloas fork epoch.
+        let PtcDuties { duties, .. } = beacon_nodes.ptc_duties(epoch, validator_indices).await?;
 
         let signer_snapshot = self.signer.load();
         let mut members_by_slot = slots

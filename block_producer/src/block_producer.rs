@@ -609,6 +609,18 @@ impl<P: Preset, W: Wait> BlockProducer<P, W> {
                 .await
             {
                 Ok(()) => return Some(BlindedBlockPublication::PublishedByBuilder),
+                // The builder may still publish the block, and a v1 retry would wait another interval.
+                Err(error)
+                    if error
+                        .downcast_ref::<reqwest::Error>()
+                        .is_some_and(reqwest::Error::is_timeout) =>
+                {
+                    debug_with_peers!(
+                        "failed to post blinded block to the builder node: {error:?}"
+                    );
+
+                    return None;
+                }
                 Err(error) => warn_with_peers!(
                     "builder did not accept the blinded block for publishing, \
                      requesting its payload instead: {error:?}"
@@ -626,16 +638,17 @@ impl<P: Preset, W: Wait> BlockProducer<P, W> {
         {
             Ok(execution_payload) => execution_payload,
             Err(error) => {
-                if let Some(reqwest_error) = error.downcast_ref::<reqwest::Error>() {
-                    if reqwest_error.is_timeout() {
-                        // If posting signed blinded beacon block to builder fails, don't print a warning,
-                        // because builder should publish the block anyway, just cannot respond in a timely
-                        // manner. We cannot do anything else here either, but exit early from propose, due
-                        // to the risk of slashing.
-                        log_with_feature(format_args!(
-                            "failed to post blinded block to the builder node: {error:?}",
-                        ));
-                    }
+                if error
+                    .downcast_ref::<reqwest::Error>()
+                    .is_some_and(reqwest::Error::is_timeout)
+                {
+                    // If posting signed blinded beacon block to builder fails, don't print a warning,
+                    // because builder should publish the block anyway, just cannot respond in a timely
+                    // manner. We cannot do anything else here either, but exit early from propose, due
+                    // to the risk of slashing.
+                    debug_with_peers!(
+                        "failed to post blinded block to the builder node: {error:?}"
+                    );
 
                     return None;
                 }
